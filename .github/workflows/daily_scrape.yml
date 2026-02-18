@@ -1,13 +1,13 @@
-name: Daily ForexFactory Scraper
+name: Daily ForexFactory Scraper (Watcher)
 
 on:
   schedule:
-    # Run at 00:00 UTC every day
-    - cron: "0 0 * * *"
+    # Run every 6 hours (00, 06, 12, 18 UTC)
+    - cron: "0 */6 * * *"
   workflow_dispatch: # Allow manual trigger
 
 jobs:
-  scrape-and-notify:
+  watch-and-notify:
     runs-on: ubuntu-latest
 
     steps:
@@ -27,14 +27,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Scraper
-        run: python scraper.py
-
-      - name: Run Filter & Notify
+      # Run the Watcher Script (Long-running process ~6h)
+      - name: Run Watcher (Smart Polling)
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: python filter_data.py
+        run: python watcher.py
 
+      # Optional: Upload if watcher exits with artifacts
       - name: Upload Artifacts (Optional Debug)
         if: always()
         uses: actions/upload-artifact@v4

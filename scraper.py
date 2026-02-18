@@ -201,10 +201,13 @@ def get_economic_calendar():
         df.to_csv(csv_file, index=False, encoding="utf-8-sig")
         print(f"Saved to {csv_file}")
         
+        return df
+        
     except Exception as e:
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+        return None
     finally:
         driver.quit()
 
