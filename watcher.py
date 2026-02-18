@@ -23,6 +23,25 @@ def parse_event_time(date_str, time_str):
         # printf(f"Error parsing time: {e}")
         return None
 
+def to_serif_bold(text):
+    # Mapping for Mathematical Bold Serif
+    # A-Z: 119808-119833 (0x1D400)
+    # a-z: 119834-119859 (0x1D41A)
+    # 0-9: 120782-120791 (0x1D7CE)
+    
+    result = ""
+    for char in text:
+        code = ord(char)
+        if 'A' <= char <= 'Z':
+            result += chr(0x1D400 + (code - ord('A')))
+        elif 'a' <= char <= 'z':
+            result += chr(0x1D41A + (code - ord('a')))
+        elif '0' <= char <= '9':
+            result += chr(0x1D7CE + (code - ord('0')))
+        else:
+            result += char
+    return result
+
 def prepare_event_embed(row):
     # Determine Color & Icon
     color = 0xffffff # Default White
@@ -38,38 +57,59 @@ def prepare_event_embed(row):
         color = 0xffff00 # Yellow
         impact_icon = "🟡"
 
-    # Title: Empty (User requested to move everything to Description)
-    title = ""
+    # Title: Time + Icon + Event (Converted to Serif Bold)
+    # Note: Icons and | are kept as is, only text/numbers converted ideally.
+    # But simple conversion logic works fine for mixed string.
+    raw_title = f"{row['Time']} | {row['Event']}"
+    serif_title = to_serif_bold(raw_title)
     
-    # Description: Time + Icon + Event Name + Table
-    description = f"**{row['Time']}** {impact_icon} | **{row['Event']}**\n"
-    description += f"| {'Previous':^10} | {'Forecast':^10} | {'Actual':^10} |\n"
-    description += f"| {str(row['Previous']):^10} | {str(row['Forecast']):^10} | {str(row['Actual']):^10} |"
+    # Insert Icon back (Unicode chars shouldn't be converted by range check)
+    # Or just construct: Serif(Time) + Icon + | + Serif(Event)
     
-    return title, description, color
+    # Let's keep it simple: Convert alphanumeric, keep others.
+    # 07:30 -> 𝟎𝟕:𝟑𝟎 (Serif dict covers digits)
+    
+    title = f"{to_serif_bold(row['Time'])} {impact_icon} | {to_serif_bold(row['Event'])}"
+    
+    # Description: Code Block Grid
+    h1, h2, h3 = "Previous", "Forecast", "Actual"
+    v1 = str(row['Previous'])
+    v2 = str(row['Forecast'])
+    v3 = str(row['Actual'])
+
+    description = "```\n"
+    description += f"{h1:^10} {h2:^10} {h3:^10}\n"
+    description += f"{v1:^10} {v2:^10} {v3:^10}\n"
+    description += "```"
+    
+    # Color Logic
+    actual_color_status = row.get('ActualColor', 'neutral')
+    if actual_color_status == 'green': color = 0x00ff00
+    elif actual_color_status == 'red': color = 0xff0000
+
+    return title, description, color, []
 
 def main():
     print("🚀 Watcher started (6-hour window)...")
     
-    # 6 Hours in seconds
+    # 6 Hours
     MAX_RUNTIME = 6 * 3600 
     start_time = time.time()
     
-    # Track notified events to avoid spam
     notified_events = set()
 
     while (time.time() - start_time) < MAX_RUNTIME:
         
-        # 1. Get Schedule (Potential Events)
+        # 1. Get Schedule
         print("📅 Checking schedule...")
         df_schedule = scraper.get_economic_calendar()
         
         if df_schedule is None or df_schedule.empty:
-            print("No events found today. Sleeping 1 hour...")
+            print("No events found. Sleeping 1 hour...")
             time.sleep(3600)
             continue
 
-        # 2. Identify Pending Events (High/Medium)
+        # 2. Identify Pending
         utc_now = get_utc_now()
         pending_events = []
 
@@ -83,20 +123,13 @@ def main():
             unique_id = f"{row['Date']}_{row['Time']}_{row['Event']}"
             if unique_id in notified_events: continue
             
-            # Check if Actual present (already released)
             has_actual = str(row['Actual']).strip() != ""
             if has_actual and str(row['Actual']) != "nan": 
-                # Already released, skip
                 notified_events.add(unique_id)
                 continue
             
-            # Pending or very recently passed (within 10 mins)
             if time_diff > -600: 
-                pending_events.append({
-                    "dt": event_dt,
-                    "row": row,
-                    "id": unique_id
-                })
+                pending_events.append({"dt": event_dt, "row": row, "id": unique_id})
 
         if not pending_events:
             print("✅ No more pending events. Exiting.")
@@ -109,11 +142,9 @@ def main():
         
         # 3. Wait Logic
         if time_to_wait > 0:
-            print(f"⏳ Next event: {next_event['row']['Event']} at {next_event['row']['Time']} UTC.")
-            print(f"😴 Sleeping for {time_to_wait:.0f} seconds...")
+            print(f"⏳ Next event: {next_event['row']['Event']} at {next_event['row']['Time']}")
+            print(f"😴 Sleeping {time_to_wait:.0f}s...")
             time.sleep(time_to_wait)
-        else:
-            print(f"⏰ Event time arrived: {next_event['row']['Event']}")
 
         # 4. Smart Polling
         target_time_str = next_event['row']['Time']
@@ -128,7 +159,7 @@ def main():
             print(f"   >> Polling...")
             df_latest = scraper.get_economic_calendar()
             
-            if df_latest is not None:
+            if df_latest:
                 still_pending = []
                 for target in events_at_this_time:
                     match = df_latest[
@@ -141,14 +172,15 @@ def main():
                         actual_val = str(latest_row['Actual']).strip()
                         
                         if actual_val and actual_val != "nan":
-                            print(f"   🎯 Data Found: {actual_val}")
+                            print(f"   🎯 Data: {actual_val}")
                             
-                            # Notify using Embed
                             if WEBHOOK_URL:
                                 notifier = DiscordNotifier(WEBHOOK_URL)
-                                title, desc, col = prepare_event_embed(latest_row)
-                                notifier.send_embed(title, desc, color=col)
-                                print("   📨 Embed sent.")
+                                # Unpack 4 values now
+                                title, desc, col, fields = prepare_event_embed(latest_row)
+                                # Send with fields
+                                notifier.send_embed(title, desc, color=col, fields=fields)
+                                print("   📨 Sent.")
                             
                             notified_events.add(target['id'])
                         else:
@@ -158,13 +190,12 @@ def main():
                 
                 events_at_this_time = still_pending
                 if not events_at_this_time:
-                    print("✅ All events resolved.")
+                    print("✅ Resolved.")
                     break
             
-            print("   💤 Retrying in 30s...")
             time.sleep(30)
             
-    print("🏁 Watcher finished.")
+    print("🏁 Finished.")
 
 if __name__ == "__main__":
     main()

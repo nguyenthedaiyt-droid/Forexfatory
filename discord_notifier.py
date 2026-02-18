@@ -20,22 +20,25 @@ class DiscordNotifier:
         
         self._send_request(data)
 
-    def send_embed(self, title, description, color=0x00ff00):
+    def send_embed(self, title, description, color=0x00ff00, fields=None):
         """
-        Gửi tin nhắn dạng Embed (đẹp hơn).
+        Gửi tin nhắn dạng Embed (đẹp hơn) có hỗ trợ fields.
         """
         if not self.webhook_url:
             print("Chưa cấu hình Webhook URL.")
             return
 
+        embed = {
+            "title": title,
+            "description": description,
+            "color": color
+        }
+        
+        if fields:
+            embed["fields"] = fields
+
         data = {
-            "embeds": [
-                {
-                    "title": title,
-                    "description": description,
-                    "color": color
-                }
-            ]
+            "embeds": [embed]
         }
         
         self._send_request(data)

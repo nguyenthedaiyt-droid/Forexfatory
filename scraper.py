@@ -163,7 +163,16 @@ def get_economic_calendar():
                 event_name = event_cell.text.strip() if event_cell else ""
                 if not event_name: continue
 
-                actual = row.find("td", class_="calendar__actual").text.strip() if row.find("td", class_="calendar__actual") else ""
+                actual_cell = row.find("td", class_="calendar__actual")
+                actual = actual_cell.text.strip() if actual_cell else ""
+                
+                # Capture Impact Color (Better/Worse)
+                actual_color = "neutral"
+                if actual_cell:
+                    classes = actual_cell.get("class", [])
+                    if "better" in classes: actual_color = "green"
+                    elif "worse" in classes: actual_color = "red"
+
                 forecast = row.find("td", class_="calendar__forecast").text.strip() if row.find("td", class_="calendar__forecast") else ""
                 previous = row.find("td", class_="calendar__previous").text.strip() if row.find("td", class_="calendar__previous") else ""
                 
@@ -180,6 +189,7 @@ def get_economic_calendar():
                     "Impact": impact,
                     "Event": event_name,
                     "Actual": actual,
+                    "ActualColor": actual_color,
                     "Forecast": forecast,
                     "Previous": previous
                 })
