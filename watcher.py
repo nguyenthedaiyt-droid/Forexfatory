@@ -95,17 +95,36 @@ def send_schedule_summary(df, webhook_url):
 
     notifier = DiscordNotifier(webhook_url)
     
-    # Construct Body
-    desc = ""
+    # Table Header
+    # Time  | Imp | Event                          | Forecast
+    # 07:30 | 🔴  | Core Durable Goods ...         | -1.8%
+    
+    desc = "```\n"
+    desc += f"{'Time':<5} {'Imp':<3} {'Event':<30} {'Forecast':<8}\n"
+    desc += "-"*50 + "\n"
+
     for _, row in df.iterrows():
         icon = "⚪"
         if row['Impact'] == 'High': icon = "🔴"
         elif row['Impact'] == 'Medium': icon = "🟠"
         elif row['Impact'] == 'Low': icon = "🟡"
         
-        # Format: 07:30 🔴 Event Name (Fcst: x.x%)
-        fcst = f"(Fcst: {row['Forecast']})" if str(row['Forecast']) != 'nan' else ""
-        desc += f"`{row['Time']}` {icon} **{row['Event']}** {fcst}\n"
+        # Truncate Event Name if too long
+        event_name = row['Event']
+        if len(event_name) > 28:
+            event_name = event_name[:25] + "..."
+            
+        fcst = str(row['Forecast'])
+        if fcst == "nan": fcst = "-"
+        
+        # Note: Emoji width in code blocks can be tricky.
+        # Usually 1 emoji = 2 chars visual width but 1 char string length?
+        # Actually emojis often break monospaced alignment.
+        # Let's try best effort. 
+        
+        desc += f"{row['Time']:<5} {icon:<3} {event_name:<30} {fcst:<8}\n"
+
+    desc += "```"
 
     title = f"📅 Daily Economic Schedule ({len(df)} Events)"
     notifier.send_embed(title, desc, color=0x3498db) # Blue for Info
