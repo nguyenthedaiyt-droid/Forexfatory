@@ -110,31 +110,6 @@ def send_schedule_summary(df, webhook_url):
     title = f"📅 Daily Economic Schedule ({len(df)} Events)"
     notifier.send_embed(title, desc, color=0x3498db) # Blue for Info
 
-def send_latest_check(df, webhook_url):
-    """Sends the notification for the most recent event with Actual data."""
-    if df.empty or not webhook_url: return
-    
-    # Filter events with Actual data
-    completed_events = []
-    for _, row in df.iterrows():
-        if str(row['Actual']).strip() != "" and str(row['Actual']) != "nan":
-            completed_events.append(row)
-            
-    if not completed_events:
-        print("ℹ️ No past events with data found to send check.")
-        return
-
-    # Get the LAST completed event (most recent)
-    # Assuming df is sorted by time
-    latest_event = completed_events[-1]
-    
-    print(f"👀 Sending Latest Event Check: {latest_event['Event']}")
-    
-    notifier = DiscordNotifier(webhook_url)
-    title, desc, color, fields = prepare_event_embed(latest_event)
-    notifier.send_embed(title, desc, color=color, fields=fields)
-
-
 def main():
     print("🚀 Watcher started (6-hour window)...")
     
@@ -147,9 +122,8 @@ def main():
         print("📨 Sending Daily Schedule Summary...")
         send_schedule_summary(df_schedule, WEBHOOK_URL)
         
-        # 0.5 Send Latest Result (if any)
-        print("📨 Sending Latest Data Check...")
-        send_latest_check(df_schedule, WEBHOOK_URL)
+        # Removed "Latest Check" as requested.
+        # It will now proceed to Wait/Poll loop for the NEXT event.
     
     # 6 Hours
     MAX_RUNTIME = 6 * 3600 
