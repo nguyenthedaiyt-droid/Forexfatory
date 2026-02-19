@@ -89,8 +89,67 @@ def prepare_event_embed(row):
 
     return title, description, color, []
 
+def send_schedule_summary(df, webhook_url):
+    """Sends a summary of all events found for the session."""
+    if df.empty or not webhook_url: return
+
+    notifier = DiscordNotifier(webhook_url)
+    
+    # Construct Body
+    desc = ""
+    for _, row in df.iterrows():
+        icon = "⚪"
+        if row['Impact'] == 'High': icon = "🔴"
+        elif row['Impact'] == 'Medium': icon = "🟠"
+        elif row['Impact'] == 'Low': icon = "🟡"
+        
+        # Format: 07:30 🔴 Event Name (Fcst: x.x%)
+        fcst = f"(Fcst: {row['Forecast']})" if str(row['Forecast']) != 'nan' else ""
+        desc += f"`{row['Time']}` {icon} **{row['Event']}** {fcst}\n"
+
+    title = f"📅 Daily Economic Schedule ({len(df)} Events)"
+    notifier.send_embed(title, desc, color=0x3498db) # Blue for Info
+
+def send_latest_check(df, webhook_url):
+    """Sends the notification for the most recent event with Actual data."""
+    if df.empty or not webhook_url: return
+    
+    # Filter events with Actual data
+    completed_events = []
+    for _, row in df.iterrows():
+        if str(row['Actual']).strip() != "" and str(row['Actual']) != "nan":
+            completed_events.append(row)
+            
+    if not completed_events:
+        print("ℹ️ No past events with data found to send check.")
+        return
+
+    # Get the LAST completed event (most recent)
+    # Assuming df is sorted by time
+    latest_event = completed_events[-1]
+    
+    print(f"👀 Sending Latest Event Check: {latest_event['Event']}")
+    
+    notifier = DiscordNotifier(webhook_url)
+    title, desc, color, fields = prepare_event_embed(latest_event)
+    notifier.send_embed(title, desc, color=color, fields=fields)
+
+
 def main():
     print("🚀 Watcher started (6-hour window)...")
+    
+    # Initial Scrape for startup actions
+    print("📅 Fetching initial schedule...")
+    df_schedule = scraper.get_economic_calendar()
+    
+    if df_schedule is not None and not df_schedule.empty:
+        # 0. Send Summary
+        print("📨 Sending Daily Schedule Summary...")
+        send_schedule_summary(df_schedule, WEBHOOK_URL)
+        
+        # 0.5 Send Latest Result (if any)
+        print("📨 Sending Latest Data Check...")
+        send_latest_check(df_schedule, WEBHOOK_URL)
     
     # 6 Hours
     MAX_RUNTIME = 6 * 3600 
@@ -98,10 +157,18 @@ def main():
     
     notified_events = set()
 
+    # Pre-fill notified_events with those already having data (so we don't spam them again in the loop)
+    # BUT wait, user might WANT to see the latest one in the loop? 
+    # Usually the loop checks "if has_actual -> add to notified -> continue".
+    # So if we run "send_latest_check", we just sent it once successfully.
+    # The loop logic will handle deduplication normally.
+    
     while (time.time() - start_time) < MAX_RUNTIME:
         
-        # 1. Get Schedule
-        print("📅 Checking schedule...")
+        # 1. Get Schedule (Refresh)
+        # We can reuse df_schedule for the first iteration?
+        # Let's just strictly follow the loop structure to keep state fresh.
+        print("🔄 Refreshing schedule...")
         df_schedule = scraper.get_economic_calendar()
         
         if df_schedule is None or df_schedule.empty:
@@ -145,6 +212,9 @@ def main():
             print(f"⏳ Next event: {next_event['row']['Event']} at {next_event['row']['Time']}")
             print(f"😴 Sleeping {time_to_wait:.0f}s...")
             time.sleep(time_to_wait)
+        else:
+            # Maybe it's just happened or slightly past
+            pass
 
         # 4. Smart Polling
         target_time_str = next_event['row']['Time']
@@ -159,7 +229,7 @@ def main():
             print(f"   >> Polling...")
             df_latest = scraper.get_economic_calendar()
             
-            if df_latest:
+            if df_latest is not None:
                 still_pending = []
                 for target in events_at_this_time:
                     match = df_latest[
