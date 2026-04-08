@@ -1,0 +1,12 @@
+Breaking News / High Impact
+
+Breaking News / Medium Impact
+
+Breaking News / Low Impact
+
+
+
+
+tôi muốn xây dựng 1 tools cập nhật tin tức từ trang 'https://www.forexfactory.com/news' gửi về discord.
+yêu cầu: cập nhật tin tức nhanh nhất, có thể lọc tin tức theo High Impact, Medium Impact, Low Impact
+- sử dụng Github Actions để chạy tools

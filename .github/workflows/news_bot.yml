@@ -1,0 +1,72 @@
+name: ForexFactory News → Discord Bot
+
+on:
+  schedule:
+    # Chạy mỗi 30 phút (UTC) - tương đương 30 phút 1 lần
+    - cron: "*/30 * * * *"
+
+  # Cho phép chạy thủ công từ tab Actions
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Chạy thử (không gửi Discord)"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+jobs:
+  fetch-and-notify:
+    name: Fetch News & Notify Discord
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ─── 1. Checkout repo ─────────────────────────────────────
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      # ─── 2. Setup Python ──────────────────────────────────────
+      - name: 🐍 Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      # ─── 3. Cài dependencies ──────────────────────────────────
+      - name: 📦 Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ─── 4. Cài Playwright Chromium ───────────────────────────
+      - name: 🌐 Install Playwright Chromium
+        run: playwright install chromium --with-deps
+
+      # ─── 5. Restore cache sent_news.json ──────────────────────
+      - name: 🗃️ Restore sent_news cache
+        uses: actions/cache@v4
+        with:
+          path: sent_news.json
+          key: sent-news-cache-${{ runner.os }}
+          restore-keys: |
+            sent-news-cache-${{ runner.os }}
+
+      # ─── 6. Chạy bot ──────────────────────────────────────────
+      - name: 🚀 Run News Bot
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            python main.py --dry-run
+          else
+            python main.py
+          fi
+
+      # ─── 7. Lưu lại cache sent_news.json ─────────────────────
+      - name: 💾 Save sent_news cache
+        uses: actions/cache@v4
+        if: always()
+        with:
+          path: sent_news.json
+          key: sent-news-cache-${{ runner.os }}-${{ github.run_id }}
