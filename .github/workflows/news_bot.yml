@@ -3,7 +3,7 @@ name: ForexFactory News → Discord Bot
 on:
   schedule:
     # Chạy mỗi 30 phút (UTC) - tương đương 30 phút 1 lần
-    - cron: "*/30 * * * *"
+    - cron: "*/5 * * * *"
 
   # Cho phép chạy thủ công từ tab Actions
   workflow_dispatch:
