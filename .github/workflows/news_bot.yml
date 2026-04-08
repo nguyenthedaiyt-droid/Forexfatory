@@ -20,7 +20,7 @@ on:
 jobs:
   fetch-and-notify:
     name: Fetch News & Notify Discord
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 10
 
     steps:
@@ -39,31 +39,9 @@ jobs:
       - name: 📦 Install Python dependencies
         run: pip install -r requirements.txt
 
-      # ─── 4. Cài system deps cho Playwright (Ubuntu 24.04) ────
-      - name: 🔧 Install Playwright system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2t64 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libcups2 \
-            libdrm2 \
-            libgbm1 \
-            libgtk-3-0 \
-            libnspr4 \
-            libnss3 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxrandr2 \
-            libxss1 \
-            libxtst6 \
-            xvfb
-
-      # ─── 5. Cài Playwright Chromium ───────────────────────────
+      # ─── 4. Cài Playwright Chromium + system deps ──────────
       - name: 🌐 Install Playwright Chromium
-        run: playwright install chromium
+        run: playwright install chromium --with-deps
 
       # ─── 5. Restore cache sent_news.json ──────────────────────
       - name: 🗃️ Restore sent_news cache
