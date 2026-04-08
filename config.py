@@ -2,10 +2,15 @@
 # CONFIG - Cấu hình ForexFactory News Discord Bot
 # ============================================================
 
+import os
+
 # --- Lọc Impact Level (True = bật, False = tắt) ---
 FILTER_HIGH_IMPACT   = True
 FILTER_MEDIUM_IMPACT = True
 FILTER_LOW_IMPACT    = False
+
+# --- Gemini API Configuration ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 # --- Giới hạn bộ nhớ (tránh file JSON phình to) ---
 MAX_SENT_IDS = 500

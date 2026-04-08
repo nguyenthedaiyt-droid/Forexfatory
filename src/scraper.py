@@ -5,7 +5,7 @@ scraper.py - Cào tin tức từ ForexFactory bằng Playwright (vượt anti-bo
 import hashlib
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from bs4 import BeautifulSoup
@@ -27,6 +27,8 @@ class NewsItem:
     published_at: str     # Chuỗi thời gian gốc từ trang
     summary: str = ""
     currency: str = ""
+    ai_analysis: str = ""
+    unix_time: int = 0
     scraped_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
@@ -34,8 +36,14 @@ class NewsItem:
 # HELPER - Tạo ID duy nhất từ URL
 # ============================================================
 
-def _make_news_id(url: str) -> str:
-    return hashlib.md5(url.strip().encode()).hexdigest()
+def _make_news_id(url: str, title: str) -> str:
+    # Trích xuất số ID của bài báo từ URL giúp nhận diện định danh chính xác 100%
+    match = re.search(r'/news/(\d+)', url)
+    if match:
+        return match.group(1)
+    
+    # Fallback: Hash Title
+    return hashlib.md5(title.strip().encode()).hexdigest()
 
 
 # ============================================================
@@ -55,6 +63,37 @@ def _parse_impact(element) -> str:
         if "impact-ff-medium" in classes: return "medium"
         if "impact-ff-low"    in classes: return "low"
     return "unknown"
+
+
+# ============================================================
+# HELPER - Chuyển đổi "x hr ago" thành Giờ tuyệt đối (Discord Timestamp)
+# ============================================================
+
+def _parse_relative_time(time_str: str) -> tuple[str, int]:
+    """
+    Trích xuất Unix Timestamp để sắp xếp, và trả về string format Discord.
+    """
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    if not time_str or "ago" not in time_str.lower():
+        return time_str, now_ts
+
+    time_str = time_str.lower()
+    
+    hr_match = re.search(r'(\d+)\s*hr', time_str)
+    min_match = re.search(r'(\d+)\s*min', time_str)
+
+    hours = int(hr_match.group(1)) if hr_match else 0
+    minutes = int(min_match.group(1)) if min_match else 0
+
+    if hours == 0 and minutes == 0:
+        return time_str, now_ts
+
+    now = datetime.now(timezone.utc)
+    diff = timedelta(hours=hours, minutes=minutes)
+    published_time = now - diff
+    
+    unix_ts = int(published_time.timestamp())
+    return f"<t:{unix_ts}:t>", unix_ts
 
 
 # ============================================================
@@ -89,15 +128,16 @@ def _parse_news_element(el) -> Optional[NewsItem]:
         # Impact: img[class*=impact-ff-] trong news-block__details
         impact = _parse_impact(el)
 
-        # Thời gian: span.nowrap có title attribute chứa ngày giờ đầy đủ
+        # Thời gian
         time_tag = el.find("span", class_="nowrap")
-        published_at = time_tag.get("title", "") or time_tag.get_text(strip=True) if time_tag else ""
+        raw_published = time_tag.get("title", "") or time_tag.get_text(strip=True) if time_tag else ""
+        published_at, unix_time = _parse_relative_time(raw_published)
 
         # Preview / Summary
         preview_tag = el.find("div", class_="news-block__preview")
         summary = preview_tag.get_text(strip=True) if preview_tag else ""
 
-        news_id = _make_news_id(href)
+        news_id = _make_news_id(href, title)
 
         return NewsItem(
             news_id=news_id,
@@ -106,6 +146,7 @@ def _parse_news_element(el) -> Optional[NewsItem]:
             impact=impact,
             published_at=published_at,
             summary=summary,
+            unix_time=unix_time
         )
     except Exception:
         return None

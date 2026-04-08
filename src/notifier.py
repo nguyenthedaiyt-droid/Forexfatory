@@ -65,16 +65,22 @@ def _build_embed(item: NewsItem) -> dict:
             "inline": True,
         })
 
+    if item.ai_analysis:
+        fields.append({
+            "name": "🤖 Nhận định thị trường (AI)",
+            "value": item.ai_analysis,
+            "inline": False,
+        })
+
     description = item.summary if item.summary else ""
 
     embed = {
         "title": item.title,
-        "url":   item.url,
         "color": color,
         "description": description,
         "fields": fields,
         "footer": {
-            "text": "ForexFactory News",
+            "text": "𝙿𝚘𝚠𝚎𝚛𝚎𝚍 𝚋𝚢 𝙾𝚋𝚒𝚝𝚘 𝙽𝚎𝚠𝚜",
             "icon_url": "https://www.forexfactory.com/favicon.ico",
         },
     }
@@ -120,8 +126,9 @@ def send_news_to_discord(
         if dry_run:
             _, emoji, label = _get_impact_style(item.impact)
             print(f"[DRY-RUN] {emoji} [{label}] {item.title}")
-            print(f"          🔗 {item.url}")
             print(f"          🕐 {item.published_at}")
+            if item.ai_analysis:
+                print(f"          🤖 AI: {item.ai_analysis[:50]}...")
             print()
             succeeded.append(item.news_id)
             continue

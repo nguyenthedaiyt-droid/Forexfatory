@@ -8,6 +8,7 @@ import sys
 
 from src.scraper  import scrape_news
 from src.filter   import filter_news
+from src.analyzer import setup_analyzer, analyze_news_impact
 from src.notifier import send_news_to_discord
 from src.storage  import load_sent_ids, save_sent_ids
 
@@ -70,17 +71,31 @@ async def main() -> None:
         print("ℹ️  Không có tin mới cần gửi. Kết thúc.")
         sys.exit(0)
 
-    # 4. Gửi lên Discord
-    print(f"\n[4/4] 📨 Gửi {len(new_news)} tin lên Discord...")
+    # Sắp xếp tin tức ưu tiên mới nhất đẩy lên đầu
+    new_news.sort(key=lambda x: x.unix_time, reverse=True)
+
+    # 4. Phân tích tác động với Gemini AI
+    print("\n[4/5] 🤖 Đang dùng Gemini để nhận định thị trường...")
+    setup_analyzer()
+    for item in new_news:
+        print(f"     → Phân tích: {item.title[:50]}...")
+        result = await analyze_news_impact(item.title, item.summary)
+        if isinstance(result, dict):
+            item.title = result.get("title", item.title)
+            item.summary = result.get("summary", item.summary)
+            item.ai_analysis = result.get("analysis", "")
+
+    # 5. Gửi lên Discord
+    print(f"\n[5/5] 📨 Gửi {len(new_news)} tin lên Discord...")
     sent_ids_new = send_news_to_discord(
         news_items=new_news,
         webhook_url=args.webhook_url,
         dry_run=dry_run,
     )
 
-    # 5. Cập nhật cache nếu không phải dry-run
+    # 6. Cập nhật cache nếu không phải dry-run
     if not dry_run and sent_ids_new:
-        print("\n[5/5] 💾 Cập nhật cache...")
+        print("\n[6/6] 💾 Cập nhật cache...")
         save_sent_ids(sent_ids, sent_ids_new)
 
     print("\n" + "=" * 60)
