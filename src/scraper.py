@@ -9,12 +9,9 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from bs4 import BeautifulSoup
-from playwright.async_api import async_playwright, Page, TimeoutError as PlaywrightTimeoutError
+from curl_cffi.requests import AsyncSession
 
-from config import (
-    FOREXFACTORY_NEWS_URL,
-    PLAYWRIGHT_TIMEOUT,
-)
+from config import FOREXFACTORY_NEWS_URL
 
 
 # ============================================================
@@ -148,88 +145,29 @@ def _parse_page_html(html: str) -> list[NewsItem]:
 
 async def scrape_news() -> list[NewsItem]:
     """
-    Launch Playwright Chromium, navigate đến ForexFactory /news,
-    chờ content load xong, parse HTML và trả về danh sách NewsItem.
+    Sử dụng curl_cffi giả lập Chrome để fetch HTML.
+    Vượt qua Cloudflare dễ dàng mà không cần headless browser nặng nề.
     """
     news_items: list[NewsItem] = []
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-infobars",
-                "--disable-dev-shm-usage",
-            ],
-        )
+    try:
+        print(f"[SCRAPER] 🌐 Truy cập: {FOREXFACTORY_NEWS_URL}")
+        async with AsyncSession(impersonate="chrome") as session:
+            # Gửi request với định danh trình duyệt thật
+            response = await session.get(FOREXFACTORY_NEWS_URL, timeout=30)
 
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 800},
-            java_script_enabled=True,
-            locale="en-US",
-        )
-
-        page: Page = await context.new_page()
-
-        # Ẩn dấu hiệu automation
-        await page.add_init_script("""
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-            window.chrome = { runtime: {} };
-        """)
-
-        try:
-            print(f"[SCRAPER] 🌐 Truy cập: {FOREXFACTORY_NEWS_URL}")
-            await page.goto(FOREXFACTORY_NEWS_URL, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
-
-            # In URL hiện tại để phát hiện redirect (Cloudflare challenge...)
-            current_url = page.url
-            print(f"[SCRAPER DEBUG] URL sau khi load: {current_url}")
-            print(f"[SCRAPER DEBUG] Title: {await page.title()}")
-
-            # Chờ cứng 5 giây để JS render
-            await page.wait_for_timeout(5000)
-
-            # Chụp screenshot để debug (lưu vào thư mục hiện tại)
-            await page.screenshot(path="debug_screenshot.png", full_page=False)
-            print("[SCRAPER DEBUG] Đã chụp screenshot: debug_screenshot.png")
-
-            # Chờ container tin tức thực tế của ForexFactory
-            try:
-                await page.wait_for_selector(".news-block__item", timeout=15_000)
-                print("[SCRAPER] ✅ Selector matched: .news-block__item")
-            except PlaywrightTimeoutError:
-                print("[SCRAPER] ⚠️  .news-block__item không tìm thấy, tiếp tục parse...")
-
-            # Lấy toàn bộ HTML sau khi JS render xong
-            html = await page.content()
+            html = response.text
+            print(f"[SCRAPER DEBUG] Status: {response.status_code}")
             print(f"[SCRAPER DEBUG] HTML length: {len(html)} chars")
-            print(f"[SCRAPER DEBUG] HTML snippet:\n{html[:800]}")
 
-            # Dump full HTML để phân tích selector
-            with open("debug_full.html", "w", encoding="utf-8") as f:
-                f.write(html)
-            print("[SCRAPER DEBUG] Đã lưu HTML đầy đủ: debug_full.html")
+            if "news-block__item" not in html:
+                print("[SCRAPER ⚠️] Không tìm thấy 'news-block__item' trong HTML, có thể bị chặn bảo mật.")
 
+            # Trích xuất dữ liệu
             news_items = _parse_page_html(html)
 
-        except PlaywrightTimeoutError:
-            print("[SCRAPER] ⚠️  Timeout khi tải trang ForexFactory")
-            try:
-                await page.screenshot(path="debug_timeout.png")
-                print("[SCRAPER DEBUG] Đã chụp screenshot lỗi: debug_timeout.png")
-            except Exception:
-                pass
-        except Exception as e:
-            print(f"[SCRAPER] ❌ Lỗi: {e}")
-        finally:
-            await browser.close()
+    except Exception as e:
+        print(f"[SCRAPER] ❌ Lỗi: {e}")
 
     print(f"[SCRAPER] ✅ Cào được {len(news_items)} tin tức")
     return news_items

@@ -39,9 +39,7 @@ jobs:
       - name: 📦 Install Python dependencies
         run: pip install -r requirements.txt
 
-      # ─── 4. Cài Playwright Chromium + system deps ──────────
-      - name: 🌐 Install Playwright Chromium
-        run: playwright install chromium --with-deps
+
 
       # ─── 5. Restore cache sent_news.json ──────────────────────
       - name: 🗃️ Restore sent_news cache
