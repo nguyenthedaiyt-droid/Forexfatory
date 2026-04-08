@@ -1,0 +1,42 @@
+name: Daily ForexFactory Scraper (Watcher)
+
+on:
+  schedule:
+    # Run every 6 hours (00, 06, 12, 18 UTC)
+    - cron: "0 */6 * * *"
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  watch-and-notify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Run the Watcher Script (Long-running process ~6h)
+      - name: Run Watcher (Smart Polling)
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python watcher.py
+
+      # Optional: Upload if watcher exits with artifacts
+      - name: Upload Artifacts (Optional Debug)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraped-data
+          path: economic_calendar.csv
