@@ -64,15 +64,19 @@ def _parse_impact(element) -> str:
 def _parse_news_element(el) -> Optional[NewsItem]:
     """Parse một phần tử `div.news-block__item` thành NewsItem."""
     try:
-        # Tiêu đề + URL: dùng class news-block__image-link
-        title_tag = el.find("a", class_="news-block__image-link")
+        # Tiêu đề + URL: nằm trong div.news-block__title -> a
+        title_container = el.find("div", class_="news-block__title")
+        if not title_container:
+            return None
+
+        title_tag = title_container.find("a")
         if not title_tag:
             return None
 
-        # Lấy title từ attribute "title" (đầy đủ hơn text content)
-        title = title_tag.get("title", "").strip()
+        # Lấy title
+        title = title_tag.get_text(strip=True)
         if not title:
-            title = title_tag.get_text(strip=True)
+            title = title_tag.get("title", "").strip()
         if not title:
             return None
 
