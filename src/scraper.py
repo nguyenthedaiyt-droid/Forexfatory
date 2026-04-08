@@ -47,35 +47,16 @@ def _make_news_id(url: str) -> str:
 
 def _parse_impact(element) -> str:
     """
-    ForexFactory dùng class CSS để đánh dấu impact.
-    Thử nhiều selector khả dĩ theo cấu trúc HTML thực tế.
+    ForexFactory đánh dấu impact qua class của thẻ img trong news-block__details.
+    Class pattern: svg-img--impact-ff-high / medium / low
     """
-    impact_map = {
-        "high":   ["impact-h", "high",   "impact--high",   "ico-impact-yel"],
-        "medium": ["impact-m", "medium", "impact--medium", "ico-impact-ora"],
-        "low":    ["impact-l", "low",    "impact--low",    "ico-impact-yel-low"],
-    }
-
-    # Tìm tất cả class trong element con có chứa từ "impact"
-    target = element.find(class_=re.compile(r"impact", re.I))
-    if not target:
-        return "unknown"
-
-    classes = " ".join(target.get("class", []))
-    classes_lower = classes.lower()
-
-    for level, keywords in impact_map.items():
-        if any(kw in classes_lower for kw in keywords):
-            return level
-
-    # Fallback: đọc alt text của img icon
-    img = element.find("img", alt=re.compile(r"high|medium|low", re.I))
+    # Tìm img có class chứa impact-ff-
+    img = element.find("img", class_=re.compile(r"impact-ff-", re.I))
     if img:
-        alt = img.get("alt", "").lower()
-        if "high"   in alt: return "high"
-        if "medium" in alt: return "medium"
-        if "low"    in alt: return "low"
-
+        classes = " ".join(img.get("class", []))
+        if "impact-ff-high"   in classes: return "high"
+        if "impact-ff-medium" in classes: return "medium"
+        if "impact-ff-low"    in classes: return "low"
     return "unknown"
 
 
@@ -84,36 +65,36 @@ def _parse_impact(element) -> str:
 # ============================================================
 
 def _parse_news_element(el) -> Optional[NewsItem]:
-    """Parse một phần tử `.news-item` thành NewsItem."""
+    """Parse một phần tử `div.news-block__item` thành NewsItem."""
     try:
-        # Tiêu đề + URL
-        title_tag = el.find("a", class_=re.compile(r"title|headline|news__title", re.I))
-        if not title_tag:
-            title_tag = el.find("a", href=re.compile(r"/news/"))
+        # Tiêu đề + URL: dùng class news-block__image-link
+        title_tag = el.find("a", class_="news-block__image-link")
         if not title_tag:
             return None
 
-        title = title_tag.get_text(strip=True)
-        href  = title_tag.get("href", "")
+        # Lấy title từ attribute "title" (đầy đủ hơn text content)
+        title = title_tag.get("title", "").strip()
+        if not title:
+            title = title_tag.get_text(strip=True)
+        if not title:
+            return None
+
+        href = title_tag.get("href", "")
         if href.startswith("/"):
             href = "https://www.forexfactory.com" + href
-        if not href:
+        if not href or "/news/" not in href:
             return None
 
-        # Impact
+        # Impact: img[class*=impact-ff-] trong news-block__details
         impact = _parse_impact(el)
 
-        # Thời gian đăng
-        time_tag = el.find(["time", "span"], class_=re.compile(r"time|date|ago|published", re.I))
-        published_at = time_tag.get_text(strip=True) if time_tag else ""
+        # Thời gian: span.nowrap có title attribute chứa ngày giờ đầy đủ
+        time_tag = el.find("span", class_="nowrap")
+        published_at = time_tag.get("title", "") or time_tag.get_text(strip=True) if time_tag else ""
 
-        # Summary (đoạn mô tả ngắn)
-        summary_tag = el.find(class_=re.compile(r"summary|excerpt|detail|descript", re.I))
-        summary = summary_tag.get_text(strip=True) if summary_tag else ""
-
-        # Currency tag
-        currency_tag = el.find(class_=re.compile(r"currency|flag|symbol", re.I))
-        currency = currency_tag.get_text(strip=True) if currency_tag else ""
+        # Preview / Summary
+        preview_tag = el.find("div", class_="news-block__preview")
+        summary = preview_tag.get_text(strip=True) if preview_tag else ""
 
         news_id = _make_news_id(href)
 
@@ -124,7 +105,6 @@ def _parse_news_element(el) -> Optional[NewsItem]:
             impact=impact,
             published_at=published_at,
             summary=summary,
-            currency=currency,
         )
     except Exception:
         return None
@@ -136,36 +116,29 @@ def _parse_news_element(el) -> Optional[NewsItem]:
 
 def _parse_page_html(html: str) -> list[NewsItem]:
     """
-    Phân tích HTML toàn trang, tìm các container tin tức.
-    Thử nhiều selector để linh hoạt với thay đổi cấu trúc trang.
+    Phân tích HTML toàn trang ForexFactory.
+    Container thực tế: div.news-block__item (chứa cả headline và story)
+    Chỉ lấy loại headline/story, bỏ qua comment.
     """
     soup = BeautifulSoup(html, "lxml")
     results: list[NewsItem] = []
+    seen_ids: set[str] = set()
 
-    # Thử các container selector phổ biến của ForexFactory
-    container_selectors = [
-        {"class": re.compile(r"^news-item", re.I)},
-        {"class": re.compile(r"^flexposts__story", re.I)},
-        {"class": re.compile(r"news__story", re.I)},
-        {"class": re.compile(r"story-item", re.I)},
-    ]
-
-    elements = []
-    for selector in container_selectors:
-        found = soup.find_all(True, selector)
-        if found:
-            elements = found
-            break
-
-    # Fallback: tìm mọi thẻ article
-    if not elements:
-        elements = soup.find_all("article")
+    # Lấy tất cả div có class news-block__item
+    elements = soup.find_all("div", class_=re.compile(r"^news-block__item", re.I))
 
     for el in elements:
+        # Bỏ qua item loại comment (không phải tin tức)
+        classes = " ".join(el.get("class", []))
+        if "comment" in classes:
+            continue
+
         item = _parse_news_element(el)
-        if item and item.title and item.url:
+        if item and item.title and item.url and item.news_id not in seen_ids:
+            seen_ids.add(item.news_id)
             results.append(item)
 
+    print(f"[SCRAPER] 📊 Tìm thấy {len(elements)} elements, parse được {len(results)} tin")
     return results
 
 
@@ -212,28 +185,47 @@ async def scrape_news() -> list[NewsItem]:
         """)
 
         try:
+            print(f"[SCRAPER] 🌐 Truy cập: {FOREXFACTORY_NEWS_URL}")
             await page.goto(FOREXFACTORY_NEWS_URL, timeout=PLAYWRIGHT_TIMEOUT, wait_until="domcontentloaded")
 
-            # Chờ content tin tức xuất hiện (thử nhiều selector)
-            content_selectors = [
-                ".news-item",
-                ".flexposts__story",
-                ".news__story",
-                "article",
-            ]
-            for sel in content_selectors:
-                try:
-                    await page.wait_for_selector(sel, timeout=15_000)
-                    break
-                except PlaywrightTimeoutError:
-                    continue
+            # In URL hiện tại để phát hiện redirect (Cloudflare challenge...)
+            current_url = page.url
+            print(f"[SCRAPER DEBUG] URL sau khi load: {current_url}")
+            print(f"[SCRAPER DEBUG] Title: {await page.title()}")
+
+            # Chờ cứng 5 giây để JS render
+            await page.wait_for_timeout(5000)
+
+            # Chụp screenshot để debug (lưu vào thư mục hiện tại)
+            await page.screenshot(path="debug_screenshot.png", full_page=False)
+            print("[SCRAPER DEBUG] Đã chụp screenshot: debug_screenshot.png")
+
+            # Chờ container tin tức thực tế của ForexFactory
+            try:
+                await page.wait_for_selector(".news-block__item", timeout=15_000)
+                print("[SCRAPER] ✅ Selector matched: .news-block__item")
+            except PlaywrightTimeoutError:
+                print("[SCRAPER] ⚠️  .news-block__item không tìm thấy, tiếp tục parse...")
 
             # Lấy toàn bộ HTML sau khi JS render xong
             html = await page.content()
+            print(f"[SCRAPER DEBUG] HTML length: {len(html)} chars")
+            print(f"[SCRAPER DEBUG] HTML snippet:\n{html[:800]}")
+
+            # Dump full HTML để phân tích selector
+            with open("debug_full.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            print("[SCRAPER DEBUG] Đã lưu HTML đầy đủ: debug_full.html")
+
             news_items = _parse_page_html(html)
 
         except PlaywrightTimeoutError:
             print("[SCRAPER] ⚠️  Timeout khi tải trang ForexFactory")
+            try:
+                await page.screenshot(path="debug_timeout.png")
+                print("[SCRAPER DEBUG] Đã chụp screenshot lỗi: debug_timeout.png")
+            except Exception:
+                pass
         except Exception as e:
             print(f"[SCRAPER] ❌ Lỗi: {e}")
         finally:
