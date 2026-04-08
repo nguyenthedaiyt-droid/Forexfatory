@@ -118,9 +118,7 @@ def send_news_to_discord(
     for item in news_items:
         embed = _build_embed(item)
         payload = {
-            "username":   BOT_USERNAME,
-            "avatar_url": BOT_AVATAR_URL,
-            "embeds":     [embed],
+            "embeds": [embed],
         }
 
         if dry_run:
