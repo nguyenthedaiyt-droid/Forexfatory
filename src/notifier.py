@@ -52,6 +52,13 @@ def _build_embed(item: NewsItem) -> dict:
             "inline": True,
         })
 
+    if item.ai_analysis:
+        fields.append({
+            "name": "Market analysis AI",
+            "value": item.ai_analysis,
+            "inline": False,
+        })
+
     fields.append({
         "name": "⚡ Impact",
         "value": f"{emoji} **{label}**",
@@ -65,12 +72,6 @@ def _build_embed(item: NewsItem) -> dict:
             "inline": True,
         })
 
-    if item.ai_analysis:
-        fields.append({
-            "name": "🤖 Nhận định thị trường (AI)",
-            "value": item.ai_analysis,
-            "inline": False,
-        })
 
     description = item.summary if item.summary else ""
 
@@ -81,7 +82,6 @@ def _build_embed(item: NewsItem) -> dict:
         "fields": fields,
         "footer": {
             "text": "𝙿𝚘𝚠𝚎𝚛𝚎𝚍 𝚋𝚢 𝙾𝚋𝚒𝚝𝚘 𝙽𝚎𝚠𝚜",
-            "icon_url": "https://www.forexfactory.com/favicon.ico",
         },
     }
 
